@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -96,6 +98,24 @@ type multiError interface {
 }
 
 func replaceAttr(groups []string, a slog.Attr) slog.Attr {
+	// Sensitive Data Filter
+	sensitiveKeys := []string{"user", "password", "key", "apikey", "secret", "pin", "creditcardno"}
+
+	if slices.Contains(sensitiveKeys, a.Key) {
+		return slog.String(a.Key, "[REDACTED]")
+	}
+
+	if a.Value.Kind() == slog.KindString {
+		u, err := url.Parse(a.Value.String())
+		if err != nil {
+			return a
+		}
+		if _, ok := u.User.Password(); ok {
+			u.User = url.UserPassword(u.User.Username(), "[REDACTED]")
+			return slog.String(a.Key, u.String())
+		}
+	}
+
 	if a.Key == "error" {
 		err, ok := a.Value.Any().(error)
 		if !ok {
